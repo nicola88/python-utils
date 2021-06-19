@@ -81,7 +81,22 @@ class MLOLClient:
     self.config = config
     self.driver = webdriver.Firefox()
 
+  def __enter__(self):
+    return self
+
+  def __exit__(self, exc_type, exc_value, traceback):
+    if exc_type or exc_value or traceback:
+      logging.warning(f"Exiting context with a '{exc_type}' exception: {exc_value}")
+    self.driver.close()
+    return self
+
   def close(self):
+    """
+    Terminate the instance of the web driver instance currently used.
+    
+    NOTE: we recommend instantiating this class using a `with` statement, 
+    since the close operation is performed automatically when going out of scope.  
+    """
     self.driver.close()
 
   def __close_dialogs(self):
@@ -240,25 +255,18 @@ if __name__ == "__main__":
     max_monthly_loans=config['loans.max_monthly']
   )
 
-  client = MLOLClient(config)
-
-  client.login()
-
-  books = client.search_books("bill gates")
-
-  client.get_active_loans()
-
-  monthly_report = client.get_monthly_report()
-
-  client.close()
-
-  for reservation in monthly_report['reservations']['list']:
-    people_ahead_in_queue = reservation.queue_position - 1
-    rounds_to_wait = floor(people_ahead_in_queue / reservation.available_copies)
-    # Best scenario: tomorrow all copies will be available for the next people in the queue
-    days_to_wait = 1 + rounds_to_wait * config.loan_duration_in_days
-    best_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
-    # Worst scenario: all copies were taken today and they will be available for the next people in the queue after this "round"
-    days_to_wait = (rounds_to_wait + 1) * config.loan_duration_in_days
-    worst_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
-    logging.info(f"'{reservation.title}' by '{reservation.authors}' should be available between {best_availability} and {worst_availability}")
+  with MLOLClient(config) as client:
+    client.login()
+    books = client.search_books("bill gates")
+    client.get_active_loans()
+    monthly_report = client.get_monthly_report()
+    for reservation in monthly_report['reservations']['list']:
+      people_ahead_in_queue = reservation.queue_position - 1
+      rounds_to_wait = floor(people_ahead_in_queue / reservation.available_copies)
+      # Best scenario: tomorrow all copies will be available for the next people in the queue
+      days_to_wait = 1 + rounds_to_wait * config.loan_duration_in_days
+      best_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
+      # Worst scenario: all copies were taken today and they will be available for the next people in the queue after this "round"
+      days_to_wait = (rounds_to_wait + 1) * config.loan_duration_in_days
+      worst_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
+      logging.info(f"'{reservation.title}' by '{reservation.authors}' should be available between {best_availability} and {worst_availability}")
