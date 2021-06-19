@@ -8,18 +8,30 @@ import re
 import string
 import sys
 
-from collections import namedtuple
 from datetime import date, datetime, timedelta
 from math import floor
 from typing import List
+from urllib.parse import urlparse, quote_plus, parse_qs
 
 from selenium import webdriver
-from selenium.webdriver.common.keys import Keys
-from selenium.webdriver.support.expected_conditions import \
-    invisibility_of_element
+from selenium.common.exceptions import NoSuchElementException
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.expected_conditions import (
+    invisibility_of_element)
 from selenium.webdriver.support.ui import WebDriverWait
 
-logging.basicConfig(level=logging.INFO)
+
+class MLOLBook:
+
+  def __init__(self, id: int, title: str, authors: str, cover: str, url: str) -> None:
+      self.id = id
+      self.title = title
+      self.authors = authors
+      self.cover = cover
+      self.url = url
+
+  def __str__(self) -> str:
+      return f"{self.authors}. {self.title}"
 
 
 class MLOLReservation:
@@ -176,18 +188,44 @@ class MLOLClient:
       'reservations': {'used': len(reservations), 'total': self.config.max_concurrent_reservations, 'available': self.config.max_concurrent_reservations - len(reservations), 'list': reservations}
     }
 
+  def search_books(self, query: str) -> List[MLOLBook]:
+    current_page = 1
+    self.driver.get(f"{self.config.base_url}/media/ricerca.aspx?keywords={quote_plus(query.strip())}&seltip=310&page={current_page}")
+    results_count = int(self.driver.find_element_by_css_selector(".mlol.active span").text)
+    logging.info(f"Found {results_count} result(s) for query '{query.strip()}'")
+    books = []
+    while True:
+      logging.info(f"Getting results from page {current_page}")
+      for result in self.driver.find_elements_by_css_selector('.ml-book-search-result.hidden-xs *[itemtype="http://schema.org/Book"]'):
+        title = result.find_element_by_css_selector('*[itemprop="name"]').text
+        url = result.find_element_by_css_selector('*[itemprop="url"]').get_attribute("href")
+        id = int(parse_qs(urlparse(url).query)['id'][0])
+        authors = result.find_element_by_css_selector('*[itemprop="author"]').get_attribute("title")
+        cover = result.find_element_by_css_selector('*[itemprop="image"]').value_of_css_property("background-image")[5:-2]   
+        book = MLOLBook(id=id, title=title, authors=authors, cover=cover, url=url)
+        books.append(book)
+        logging.info(book)
+      try:
+        self.driver.find_element_by_css_selector('#pager a.page-link.next')
+        next_page = current_page + 1
+        self.driver.get(f"{self.config.base_url}/media/ricerca.aspx?keywords={quote_plus(query.strip())}&seltip=310&page={next_page}")
+        current_page = next_page
+      except NoSuchElementException as ex:
+        logging.info("No other results page available, returning books")
+        break
+    return books
+
   def get_favourites(self):
     raise NotImplementedError()
 
   def get_book_details(self):
     raise NotImplementedError()
 
-  def search_books(self, query: str):
-    raise NotImplementedError()
-
 
 if __name__ == "__main__":
   # execute only if run as a script
+  logging.basicConfig(level=logging.INFO)
+
   assert len(sys.argv) == 2, "Missing argument for configuration file"
   config_path = os.path.abspath(sys.argv[1])
   assert os.path.isfile(config_path), "Configuration file not found or accessible"
@@ -205,6 +243,8 @@ if __name__ == "__main__":
   client = MLOLClient(config)
 
   client.login()
+
+  books = client.search_books("bill gates")
 
   client.get_active_loans()
 
