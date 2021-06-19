@@ -1,6 +1,5 @@
 """
-Selenium vs requests scraping
-https://milano.medialibrary.it/commons/QueuePos.aspx?id=1807109
+A basic script to automate navigation of MLOL websites using a Selenium web driver (Firefox by default)
 """
 import json
 import logging
@@ -187,37 +186,39 @@ class MLOLClient:
     raise NotImplementedError()
 
 
-assert len(sys.argv) == 2, "Missing argument for configuration file"
-config_path = os.path.abspath(sys.argv[1])
-assert os.path.isfile(config_path), "Configuration file not found or accessible"
-config = json.load(open(config_path))
+if __name__ == "__main__":
+  # execute only if run as a script
+  assert len(sys.argv) == 2, "Missing argument for configuration file"
+  config_path = os.path.abspath(sys.argv[1])
+  assert os.path.isfile(config_path), "Configuration file not found or accessible"
+  config = json.load(open(config_path))
 
-config = MLOLConfig(
-  base_url=config['url'], 
-  username=config['user.name'], 
-  password=config['user.password'],
-  max_concurrent_reservations=config['reservations.max_concurrent'],
-  loan_duration_in_days=config['loans.duration_in_days'],
-  max_monthly_loans=config['loans.max_monthly']
-)
+  config = MLOLConfig(
+    base_url=config['url'], 
+    username=config['user.name'], 
+    password=config['user.password'],
+    max_concurrent_reservations=config['reservations.max_concurrent'],
+    loan_duration_in_days=config['loans.duration_in_days'],
+    max_monthly_loans=config['loans.max_monthly']
+  )
 
-client = MLOLClient(config)
+  client = MLOLClient(config)
 
-client.login()
+  client.login()
 
-client.get_active_loans()
+  client.get_active_loans()
 
-monthly_report = client.get_monthly_report()
+  monthly_report = client.get_monthly_report()
 
-client.close()
+  client.close()
 
-for reservation in monthly_report['reservations']['list']:
-  people_ahead_in_queue = reservation.queue_position - 1
-  rounds_to_wait = floor(people_ahead_in_queue / reservation.available_copies)
-  # Best scenario: tomorrow all copies will be available for the next people in the queue
-  days_to_wait = 1 + rounds_to_wait * config.loan_duration_in_days
-  best_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
-  # Worst scenario: all copies were taken today and they will be available for the next people in the queue after this "round"
-  days_to_wait = (rounds_to_wait + 1) * config.loan_duration_in_days
-  worst_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
-  logging.info(f"'{reservation.title}' by '{reservation.authors}' should be available between {best_availability} and {worst_availability}")
+  for reservation in monthly_report['reservations']['list']:
+    people_ahead_in_queue = reservation.queue_position - 1
+    rounds_to_wait = floor(people_ahead_in_queue / reservation.available_copies)
+    # Best scenario: tomorrow all copies will be available for the next people in the queue
+    days_to_wait = 1 + rounds_to_wait * config.loan_duration_in_days
+    best_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
+    # Worst scenario: all copies were taken today and they will be available for the next people in the queue after this "round"
+    days_to_wait = (rounds_to_wait + 1) * config.loan_duration_in_days
+    worst_availability = date.today() + timedelta(days=1) + timedelta(days=days_to_wait)
+    logging.info(f"'{reservation.title}' by '{reservation.authors}' should be available between {best_availability} and {worst_availability}")
