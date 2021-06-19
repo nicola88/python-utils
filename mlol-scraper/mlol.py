@@ -1,6 +1,7 @@
 """
 A basic script to automate navigation of MLOL websites using a Selenium web driver (Firefox by default)
 """
+from enum import Enum
 import json
 import logging
 import os
@@ -18,7 +19,7 @@ from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.expected_conditions import (
     invisibility_of_element)
-from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support.ui import WebDriverWait  
 
 
 class MLOLBook:

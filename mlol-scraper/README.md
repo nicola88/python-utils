@@ -38,5 +38,10 @@ The configuration is passed as the first positional argument (see section _Usage
 
 ```bash
 cd mlol-scraper
-python mlol-scraper.py <path-to-JSON-config-file>
+python mlol.py <path-to-JSON-config-file>
 ```
+
+## Roadmap
+
+- [ ] Use environment variables to expose configuration parameters
+- [ ] Add CLI options and argument to perform specific tasks
