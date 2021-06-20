@@ -22,17 +22,48 @@ from selenium.webdriver.support.expected_conditions import (
 from selenium.webdriver.support.ui import WebDriverWait  
 
 
+class MLOLEntity:
+
+  def __init__(self, id: int = None, name: str = None) -> None:
+      self.id = id
+      self.name = name
+
+  def __str__(self) -> str:
+      return self.name
+
+
+class MLOLAuthor(MLOLEntity):
+  pass
+
+
+class MLOLPublisher(MLOLEntity):
+  pass
+
+
+class MLOLTopic(MLOLEntity):
+  pass
+
+
 class MLOLBook:
 
-  def __init__(self, id: int, title: str, authors: str, cover: str, url: str) -> None:
+  def __init__(self, id: int = None, title: str = None, authors: List[MLOLAuthor] = (), cover: str = None, url: str = None, format: str = None, 
+  publisher: MLOLPublisher = None, publication_date: date = None, description: str = None, isbn: List[str] = (), language: str = None, topics: List[MLOLTopic] = ()) -> None:
       self.id = id
       self.title = title
       self.authors = authors
       self.cover = cover
       self.url = url
+      self.format = format
+      self.publisher = publisher
+      self.publication_date = publication_date
+      self.descrition = description
+      self.isbn = isbn
+      self.language = language
+      self.topics = topics
 
   def __str__(self) -> str:
-      return f"{self.authors}. {self.title}"
+      authors = ", ".join([str(author) for author in self.authors])
+      return f"[{authors}] {self.title}"
 
 
 class MLOLReservation:
@@ -138,7 +169,7 @@ class MLOLClient:
       loan_end = entry.find_element_by_css_selector('table tr:nth-child(2) td:nth-child(2) b').text
       active_loan = MLOLLoan(
         title=book_title, 
-        authors=book_authors, 
+        authors=book_authors,
         start_date=datetime.strptime(loan_start, '%d/%m/%Y'),
         end_date=datetime.strptime(loan_end, '%d/%m/%Y')
       )
@@ -176,6 +207,7 @@ class MLOLClient:
         book_title = entry.find_element_by_css_selector("h3").text
         book_authors = entry.find_element_by_css_selector('span[itemprop="author"]').text
         entry.find_element_by_css_selector('div[id^="divPos"] .btn').click()
+        # TODO Wait for the click to have effect and reservation details are actually loaded
         queue = entry.find_element_by_css_selector('div[id^="divPos"]')
         queue_position_msg, available_copies_msg = queue.text.split("\n")
         queue_position = self.config.QUANTITY_REGEX.match(queue_position_msg).group()
@@ -216,7 +248,11 @@ class MLOLClient:
         title = result.find_element_by_css_selector('*[itemprop="name"]').text
         url = result.find_element_by_css_selector('*[itemprop="url"]').get_attribute("href")
         id = int(parse_qs(urlparse(url).query)['id'][0])
-        authors = result.find_element_by_css_selector('*[itemprop="author"]').get_attribute("title")
+        authors = []
+        for author in result.find_elements_by_css_selector('[itemprop="author"] a.authorref'):
+          author_id =  int(parse_qs(urlparse(author.get_attribute('href')).query)['selcrea'][0])
+          author_name = author.text
+          authors.append(MLOLAuthor(author_id, author_name))
         cover = result.find_element_by_css_selector('*[itemprop="image"]').value_of_css_property("background-image")[5:-2]   
         book = MLOLBook(id=id, title=title, authors=authors, cover=cover, url=url)
         books.append(book)
@@ -234,8 +270,47 @@ class MLOLClient:
   def get_favourites(self):
     raise NotImplementedError()
 
-  def get_book_details(self):
-    raise NotImplementedError()
+  def get_book_details(self, id: int):
+    assert isinstance(id, int) and id >= 0, "Book ID must be a positive integer"
+    self.driver.get(f"{self.config.base_url}/media/scheda.aspx?id={id}")
+    book = self.driver.find_element_by_css_selector('[itemtype="http://schema.org/Book"]')
+    format = book.find_element_by_css_selector('[itemprop="bookFormat"]').get_attribute('content')
+    cover = book.find_element_by_css_selector('[itemprop="image"]').get_attribute('src')
+    title = book.find_element_by_css_selector('[itemprop="name"]').text
+    authors = []
+    for author in book.find_elements_by_css_selector('[itemprop="author"] a.authorref'):
+      author_id =  int(parse_qs(urlparse(author.get_attribute('href')).query)['selcrea'][0])
+      author_name = author.text
+      authors.append(MLOLAuthor(author_id, author_name))
+    publisher_element = book.find_element_by_css_selector('[itemprop="publisher"] a')
+    publisher = MLOLPublisher(
+      id=int(parse_qs(urlparse(publisher_element.get_attribute('href')).query)['selpub'][0]),
+      name = publisher_element.text
+    )
+    publication_date = datetime.strptime(book.find_element_by_css_selector('meta[itemprop="datePublished"]').get_attribute('content'), '%d/%m/%Y')
+    description = book.find_element_by_css_selector('[itemprop="description"]').text
+    isbn = [isbn.text for isbn in book.find_elements_by_css_selector('[itemprop="isbn"]')]
+    language = book.find_element_by_css_selector('[itemprop="inLanguage"]').text
+    topics = []
+    for topic in book.find_elements_by_css_selector('[itemprop="keywords"] a'):
+      topics.append(MLOLTopic(
+        id=int(parse_qs(urlparse(topic.get_attribute('href')).query)['idcce'][0]),
+        name=topic.text
+      ))
+    # is_favourite = False # TODO
+    return MLOLBook(
+      id=id,
+      cover=cover,
+      title=title,
+      format=format,
+      authors=authors,
+      publisher=publisher,
+      publication_date=publication_date,
+      description=description,
+      isbn=isbn,
+      language=language,
+      topics=topics
+    )
 
 
 if __name__ == "__main__":
@@ -258,8 +333,6 @@ if __name__ == "__main__":
 
   with MLOLClient(config) as client:
     client.login()
-    books = client.search_books("bill gates")
-    client.get_active_loans()
     monthly_report = client.get_monthly_report()
     for reservation in monthly_report['reservations']['list']:
       people_ahead_in_queue = reservation.queue_position - 1
