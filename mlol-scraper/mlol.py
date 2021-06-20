@@ -11,7 +11,7 @@ import sys
 
 from datetime import date, datetime, timedelta
 from math import floor
-from typing import List
+from typing import List, Set
 from urllib.parse import urlparse, quote_plus, parse_qs
 
 from selenium import webdriver
@@ -20,6 +20,23 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support.expected_conditions import (
     invisibility_of_element)
 from selenium.webdriver.support.ui import WebDriverWait  
+
+
+class MLOLBookStatus(Enum):
+  Available = 2
+  Borrowed = 5
+  BorrowedByMe = 3
+  NotAvailable = 1
+  Reserved = 4
+
+
+MLOL_ACTIONS = {
+  "SCARICA EBOOK": MLOLBookStatus.Available,
+  "OCCUPATO": MLOLBookStatus.Borrowed,
+  "RIPETI IL DOWNLOAD": MLOLBookStatus.BorrowedByMe,
+  "NON DISPONIBILE\nPER LA TUA BIBLIOTECA": MLOLBookStatus.NotAvailable,
+  "PRENOTATO": MLOLBookStatus.Reserved
+}
 
 
 class MLOLEntity:
@@ -47,7 +64,8 @@ class MLOLTopic(MLOLEntity):
 class MLOLBook:
 
   def __init__(self, id: int = None, title: str = None, authors: List[MLOLAuthor] = (), cover: str = None, url: str = None, format: str = None, 
-  publisher: MLOLPublisher = None, publication_date: date = None, description: str = None, isbn: List[str] = (), language: str = None, topics: List[MLOLTopic] = ()) -> None:
+  publisher: MLOLPublisher = None, publication_date: date = None, description: str = None, isbn: List[str] = (), language: str = None, 
+  topics: List[MLOLTopic] = (), status: Set[MLOLBookStatus] = (), is_favourite: bool = False) -> None:
       self.id = id
       self.title = title
       self.authors = authors
@@ -60,6 +78,8 @@ class MLOLBook:
       self.isbn = isbn
       self.language = language
       self.topics = topics
+      self.status = status
+      self.is_favourite = is_favourite
 
   def __str__(self) -> str:
       authors = ", ".join([str(author) for author in self.authors])
@@ -297,7 +317,13 @@ class MLOLClient:
         id=int(parse_qs(urlparse(topic.get_attribute('href')).query)['idcce'][0]),
         name=topic.text
       ))
-    # is_favourite = False # TODO
+    actions = self.driver.find_elements_by_css_selector('.panel-mlol-body.open-mlol-actions a')
+    status_flags = set()
+    for action in actions:
+      if action.text in MLOL_ACTIONS:
+        status_flags.add(MLOL_ACTIONS[action.text])
+    favourite_btn = self.driver.find_element_by_css_selector('.addtofavourite').text
+    is_favourite = "Aggiunto ai preferiti" in favourite_btn
     return MLOLBook(
       id=id,
       cover=cover,
@@ -309,7 +335,9 @@ class MLOLClient:
       description=description,
       isbn=isbn,
       language=language,
-      topics=topics
+      topics=topics,
+      status=status_flags,
+      is_favourite=is_favourite
     )
 
 
@@ -333,6 +361,11 @@ if __name__ == "__main__":
 
   with MLOLClient(config) as client:
     client.login()
+    client.get_book_details(150233380)
+    client.get_book_details(150037804)
+    client.get_book_details(150140586)
+    client.get_book_details(150228397)
+    client.get_book_details(150183928)
     monthly_report = client.get_monthly_report()
     for reservation in monthly_report['reservations']['list']:
       people_ahead_in_queue = reservation.queue_position - 1
